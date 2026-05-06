@@ -4,11 +4,13 @@
   "private": true,
   "description": "Obiimy chat backend (Express SSE proxy to Gemini/OpenAI)",
   "main": "server.js",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.21.2"
+    "express": "^4.22.1"
   }
 }

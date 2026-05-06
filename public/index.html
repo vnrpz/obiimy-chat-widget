@@ -2,62 +2,30 @@
 <html lang="uk">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Obiimy Chat — демо віджета</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#FAF9F5">
+  <title>Обійми · Вікторія</title>
+  <link rel="icon" href="/assets/logo.webp" type="image/webp">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/widget.css">
   <style>
-    body {
-      margin: 0; min-height: 100vh;
+    html, body {
+      margin: 0; padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #FAF9F5;
       font-family: 'Montserrat', system-ui, sans-serif;
       color: #17100A;
-      background:
-        radial-gradient(circle at 15% 10%, #FFF1CF 0%, transparent 45%),
-        radial-gradient(circle at 85% 80%, #F1E5FF 0%, transparent 45%),
-        #FAF9F5;
-      display: flex; align-items: center; justify-content: center;
-      padding: 40px 20px 200px;
-      box-sizing: border-box;
-    }
-    .card {
-      max-width: 620px; width: 100%;
-      background: rgba(255,255,255,.7);
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(23,16,10,.08);
-      padding: 36px 32px;
-      border-radius: 24px;
-      box-shadow: 0 20px 60px rgba(23,16,10,.08);
-    }
-    h1 { margin: 0 0 8px; font-size: 28px; font-weight: 600; }
-    h1 span { color: #C7902A; }
-    p { line-height: 1.6; color: rgba(23,16,10,.75); margin: 12px 0; }
-    code {
-      display: block;
-      background: #17100A; color: #FAF1D9;
-      padding: 14px 18px; border-radius: 12px;
-      font-family: ui-monospace, monospace; font-size: 13px;
-      overflow-x: auto;
-      margin-top: 16px;
-    }
-    .hint { font-size: 13px; color: rgba(23,16,10,.55); margin-top: 18px; }
-    .badge {
-      display: inline-block; padding: 4px 10px; border-radius: 999px;
-      background: linear-gradient(135deg, #F4C24C, #E8B23A);
-      color: #fff; font-size: 11px; font-weight: 600;
-      letter-spacing: .04em; text-transform: uppercase;
-      margin-bottom: 14px;
     }
   </style>
 </head>
 <body>
-  <div class="card">
-    <div class="badge">Obiimy Chat</div>
-    <h1>Привіт <span>Обійми</span> 💛</h1>
-    <p>Це демо-сторінка віджета — клацніть круг у правому нижньому куті, щоб поспілкуватись із Вікторією.</p>
-    <p>Щоб додати чат на ваш сайт, вставте цей рядок перед <code style="display:inline;background:rgba(23,16,10,.06);color:inherit;padding:2px 6px">&lt;/body&gt;</code>:</p>
-    <code>&lt;script src="https://obiimy-chat.eon.plus/embed.js" data-position="bottom-right"&gt;&lt;/script&gt;</code>
-    <p class="hint">Віджет використовує Gemini 2.5 Pro з фолбеком на GPT-4o, відповіді стрімяться в реальному часі.</p>
-  </div>
-  <script src="/embed.js" data-position="bottom-right"></script>
+  <script>
+    window.__OBIIMY_MODE__ = 'fullscreen';
+    window.__OBIIMY_API_BASE__ = window.location.origin;
+  </script>
+  <script src="/widget.js" defer></script>
 </body>
 </html>

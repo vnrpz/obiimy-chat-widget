@@ -3,7 +3,7 @@
   if (window.__obiimyChatLoaded) return;
   window.__obiimyChatLoaded = true;
 
-  // Resolve API base from script tag (so embed.js can override)
+  // === Config ===
   const API_BASE = (window.__OBIIMY_API_BASE__ || (function () {
     const me = document.currentScript || document.querySelector('script[src*="widget.js"]');
     if (me) return new URL(me.src).origin;
@@ -11,13 +11,15 @@
   })()).replace(/\/$/, '');
 
   const POSITION = window.__OBIIMY_POSITION__ || 'right';
-  const STORAGE_KEY = 'obiimy_chat_v1';
+  const MODE = window.__OBIIMY_MODE__ || 'bubble'; // 'bubble' | 'fullscreen'
+  const STORAGE_KEY = 'obiimy_chat_v2';
   const MAX_HISTORY = 50;
 
   const QUICK_REPLIES = [
-    'Як дізнатись наявність?',
-    'Який розмір хустинки обрати?',
-    'Адреса шоуруму'
+    'Які розміри хустинок?',
+    'Як замовити доставку?',
+    'Чи є подарункові набори?',
+    'Як потрапити в шоурум?'
   ];
 
   const SVG = {
@@ -26,23 +28,19 @@
     send:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.4 20.4l17.4-7.5c.8-.4.8-1.5 0-1.8L3.4 3.6c-.7-.3-1.4.4-1.2 1.1L4 11.5l13 .5L4 12.5l-1.8 6.8c-.2.7.5 1.4 1.2 1.1z"/></svg>'
   };
 
-  // Minimal markdown renderer (paragraphs, bold, italic, lists, links, code)
+  // === Markdown renderer ===
   function escapeHtml(s) {
     return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
   function md(text) {
-    let s = escapeHtml(text);
-    // Code spans
+    // Strip [[SCENE:...]] markers BEFORE escaping (they're rendered separately)
+    const cleaned = text.replace(/\[\[SCENE:[a-z0-9_]+\]\]/gi, '').trim();
+    let s = escapeHtml(cleaned);
     s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>');
-    // Bold
     s = s.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
-    // Italic (no greedy across newlines)
     s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
-    // Links [text](url)
     s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-    // Bare urls
     s = s.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
-    // Lists (-, *, •) -> simple group
     const lines = s.split(/\n/);
     const out = [];
     let listOpen = false;
@@ -58,12 +56,11 @@
     }
     if (listOpen) out.push('</ul>');
     s = out.join('\n');
-    // Convert blank-line-separated paragraphs
     s = s.split(/\n{2,}/).map(p => /<(ul|ol|li|p|strong|em|code|a)/.test(p) ? p : '<p>' + p.replace(/\n/g, '<br>') + '</p>').join('');
     return s;
   }
 
-  // Storage
+  // === Persistence ===
   function loadHistory() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -76,25 +73,36 @@
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ sid: state.sid, msgs: state.msgs.slice(-MAX_HISTORY) })); } catch {}
   }
 
-  // Build DOM
+  // === Mobile viewport fix (iOS Safari dynamic toolbar) ===
+  function setAppHeight() {
+    document.documentElement.style.setProperty('--ob-app-height', window.innerHeight + 'px');
+  }
+
+  // === DOM build ===
   function build() {
     const root = document.createElement('div');
     root.id = 'obiimy-chat-root';
+    root.className = 'ob-' + MODE;
     if (POSITION === 'left') root.classList.add('left');
+    const headerLogoUrl = API_BASE + '/assets/logo.webp';
     root.innerHTML = `
-      <div class="ob-greeter" id="ob-greeter" role="status" aria-hidden="true">
-        <button class="ob-close" id="ob-greeter-close" aria-label="Закрити">×</button>
-        Вітаю в Обіймах 🫂💛<br>
-        Я Вікторія, рада допомогти ✨
-      </div>
-      <div class="ob-panel" id="ob-panel" role="dialog" aria-label="Чат з Вікторією">
+      ${MODE === 'bubble' ? `
+        <div class="ob-greeter" id="ob-greeter" role="status" aria-hidden="true">
+          <button class="ob-close" id="ob-greeter-close" aria-label="Закрити">×</button>
+          Вітаю в Обіймах 🫂💛<br>
+          Я Вікторія, рада допомогти ✨
+        </div>
+      ` : ''}
+      <div class="ob-panel${MODE === 'fullscreen' ? ' open ob-panel-fs' : ''}" id="ob-panel" role="dialog" aria-label="Чат з Вікторією">
         <div class="ob-header">
-          <div class="ob-avatar">В</div>
+          <div class="ob-logo-wrap">
+            <img class="ob-logo" src="${headerLogoUrl}" alt="Обійми" onerror="this.style.display='none'">
+          </div>
           <div class="ob-htext">
             <div class="ob-name">Вікторія · Обійми</div>
             <div class="ob-status">онлайн</div>
           </div>
-          <button class="ob-hclose" id="ob-hclose" aria-label="Згорнути">${SVG.close}</button>
+          ${MODE === 'bubble' ? `<button class="ob-hclose" id="ob-hclose" aria-label="Згорнути">${SVG.close}</button>` : ''}
         </div>
         <div class="ob-body" id="ob-body"></div>
         <div class="ob-foot">
@@ -105,7 +113,7 @@
           <div class="ob-footnote">з турботою від <span>Обійми</span> 💛</div>
         </div>
       </div>
-      <button class="ob-bubble pulse" id="ob-bubble" aria-label="Відкрити чат">${SVG.chat}</button>
+      ${MODE === 'bubble' ? `<button class="ob-bubble pulse" id="ob-bubble" aria-label="Відкрити чат">${SVG.chat}</button>` : ''}
     `;
     document.body.appendChild(root);
     return root;
@@ -113,6 +121,13 @@
 
   function init() {
     if (!document.body) return document.addEventListener('DOMContentLoaded', init, { once: true });
+    setAppHeight();
+    window.addEventListener('resize', setAppHeight);
+    window.addEventListener('orientationchange', setAppHeight);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', setAppHeight);
+    }
+
     const root = build();
     const bubble = root.querySelector('#ob-bubble');
     const greeter = root.querySelector('#ob-greeter');
@@ -125,42 +140,64 @@
 
     let state = loadHistory();
     let busy = false;
+    let scenarios = {};
+
+    // Fetch scenarios manifest
+    fetch(API_BASE + '/api/scenarios').then(r => r.json()).then(j => { scenarios = j; }).catch(() => {});
 
     function pushMsg(role, content) {
       state.msgs.push({ role, content, t: Date.now() });
       saveHistory(state);
     }
 
-    function renderAll() {
-      body.innerHTML = '';
-      if (!state.msgs.length) {
-        appendBot('Вітаю в Обіймах 🫂💛\nЯ Вікторія, рада допомогти ✨\nПідкажіть, що вас цікавить?');
-        renderQuicks();
-      } else {
-        for (const m of state.msgs) {
-          if (m.role === 'user') appendUser(m.content);
-          else appendBot(m.content);
-        }
-      }
-      scrollBottom();
-    }
-
-    function makeMsg(role, html) {
+    function makeMsgEl(role) {
       const wrap = document.createElement('div');
-      wrap.className = 'ob-msg ' + role;
+      wrap.className = 'ob-msg ' + role + ' ob-pop';
       if (role === 'bot') {
-        wrap.innerHTML = `<div class="ob-mavt">В</div><div class="ob-bubble-msg"></div>`;
-        wrap.querySelector('.ob-bubble-msg').innerHTML = html;
+        wrap.innerHTML = `<div class="ob-mavt"><img src="${API_BASE}/assets/logo.webp" alt="" onerror="this.style.display='none';this.parentNode.textContent='В'"></div><div class="ob-bubble-msg"></div>`;
       } else {
         wrap.innerHTML = `<div class="ob-bubble-msg"></div>`;
-        wrap.querySelector('.ob-bubble-msg').textContent = html;
       }
       body.appendChild(wrap);
       return wrap;
     }
-    function appendBot(text) { return makeMsg('bot', md(text)); }
-    function appendUser(text) { return makeMsg('user', text); }
-    function renderQuicks() {
+    function appendUser(text) {
+      const el = makeMsgEl('user');
+      el.querySelector('.ob-bubble-msg').textContent = text;
+      return el;
+    }
+    function appendBot(text) {
+      const el = makeMsgEl('bot');
+      const c = el.querySelector('.ob-bubble-msg');
+      c.innerHTML = md(text);
+      return el;
+    }
+    function appendScene(key) {
+      const sc = scenarios[key];
+      if (!sc) return null;
+      const wrap = document.createElement('div');
+      wrap.className = 'ob-msg bot ob-pop ob-msg-scene';
+      const isCarousel = sc.images.length > 1;
+      const grid = sc.images.map((src, i) =>
+        `<img class="ob-scene-img" src="${API_BASE}${src}" alt="${escapeHtml(sc.title)} ${i+1}" loading="lazy">`
+      ).join('');
+      wrap.innerHTML = `
+        <div class="ob-mavt"><img src="${API_BASE}/assets/logo.webp" alt="" onerror="this.style.display='none';this.parentNode.textContent='В'"></div>
+        <div class="ob-scene${isCarousel ? ' ob-scene-grid' : ''}">${grid}</div>
+      `;
+      // Lightbox on click
+      wrap.querySelectorAll('.ob-scene-img').forEach(img => img.addEventListener('click', () => openLightbox(img.src)));
+      body.appendChild(wrap);
+      return wrap;
+    }
+    function openLightbox(src) {
+      const lb = document.createElement('div');
+      lb.className = 'ob-lightbox';
+      lb.innerHTML = `<img src="${src}" alt=""><button class="ob-lb-close" aria-label="Закрити">×</button>`;
+      lb.addEventListener('click', () => lb.remove());
+      document.body.appendChild(lb);
+    }
+    function appendQuickReplies() {
       const q = document.createElement('div');
       q.className = 'ob-quicks';
       q.id = 'ob-quicks';
@@ -173,20 +210,126 @@
       });
       body.appendChild(q);
     }
+    function appendFollowUps(suggestions) {
+      // suggestions: array of strings
+      if (!suggestions || !suggestions.length) return;
+      const q = document.createElement('div');
+      q.className = 'ob-quicks ob-followups ob-pop';
+      suggestions.slice(0, 3).forEach(s => {
+        const b = document.createElement('button');
+        b.className = 'ob-quick';
+        b.textContent = s;
+        b.onclick = () => { input.value = s; sendMessage(); };
+        q.appendChild(b);
+      });
+      body.appendChild(q);
+    }
     function clearQuicks() {
-      const q = document.getElementById('ob-quicks');
-      if (q) q.remove();
+      document.querySelectorAll('.ob-quicks').forEach(el => el.remove());
     }
     function scrollBottom() { body.scrollTop = body.scrollHeight; }
-
     function showTyping() {
       const wrap = document.createElement('div');
       wrap.className = 'ob-msg bot';
       wrap.id = 'ob-typing';
-      wrap.innerHTML = `<div class="ob-mavt">В</div><div class="ob-typing"><span></span><span></span><span></span></div>`;
+      wrap.innerHTML = `<div class="ob-mavt"><img src="${API_BASE}/assets/logo.webp" alt="" onerror="this.style.display='none';this.parentNode.textContent='В'"></div><div class="ob-typing"><span></span><span></span><span></span></div>`;
       body.appendChild(wrap);
       scrollBottom();
       return wrap;
+    }
+    function killTyping() {
+      const t = document.getElementById('ob-typing'); if (t) t.remove();
+    }
+
+    // Welcome typewriter (only if no history yet)
+    function welcomeTypewriter(onDone) {
+      const text = 'Вітаю в Обіймах 🫂💛\nЯ Вікторія, рада допомогти ✨\nПідкажіть, що вас цікавить?';
+      const el = makeMsgEl('bot');
+      const c = el.querySelector('.ob-bubble-msg');
+      let i = 0;
+      let buf = '';
+      const tick = () => {
+        if (i >= text.length) { onDone && onDone(); return; }
+        buf += text[i++];
+        c.innerHTML = md(buf);
+        scrollBottom();
+        setTimeout(tick, text[i-1] === '\n' ? 110 : 26);
+      };
+      tick();
+    }
+
+    function renderHistory() {
+      body.innerHTML = '';
+      if (!state.msgs.length) {
+        welcomeTypewriter(() => appendQuickReplies());
+        return;
+      }
+      // Re-render full history
+      for (const m of state.msgs) {
+        if (m.role === 'user') appendUser(m.content);
+        else {
+          // Bot history may have scenes intermixed
+          const parts = splitContentByScene(m.content);
+          for (const p of parts) {
+            if (p.kind === 'text' && p.text.trim()) appendBot(p.text);
+            else if (p.kind === 'scene') appendScene(p.key);
+          }
+        }
+      }
+      scrollBottom();
+    }
+
+    function splitContentByScene(text) {
+      const re = /\[\[SCENE:([a-z0-9_]+)\]\]/gi;
+      const out = [];
+      let last = 0; let m;
+      while ((m = re.exec(text))) {
+        if (m.index > last) out.push({ kind: 'text', text: text.slice(last, m.index) });
+        out.push({ kind: 'scene', key: m[1] });
+        last = re.lastIndex;
+      }
+      if (last < text.length) out.push({ kind: 'text', text: text.slice(last) });
+      return out;
+    }
+
+    // Detect inline scenes during streaming and render them as soon as the marker is complete
+    function maybeFlushScene(state) {
+      // state.acc is full accumulated text. Find any [[SCENE:KEY]] not already rendered.
+      const re = /\[\[SCENE:([a-z0-9_]+)\]\]/gi;
+      let m;
+      while ((m = re.exec(state.acc))) {
+        if (!state.renderedScenes.has(m.index)) {
+          state.renderedScenes.add(m.index);
+          // Close current bot bubble (if it has any visible text), render scene, open a new bubble
+          if (state.botEl && state.botContentEl) {
+            // If bubble has no rendered text yet, remove the empty one before scene
+            const visible = (state.botContentEl.innerText || '').trim();
+            if (!visible) state.botEl.remove();
+          }
+          appendScene(m[1]);
+          // Reset bot bubble for subsequent text after the marker
+          state.botEl = null; state.botContentEl = null;
+          scrollBottom();
+        }
+      }
+    }
+
+    // Generate smart follow-up suggestions based on bot's last reply (heuristic, no extra API call)
+    function suggestFollowups(text) {
+      const t = text.toLowerCase();
+      const ideas = [];
+      if (/65×65|65\\65|розмір 65/i.test(text) && !/88/.test(text.toLowerCase())) ideas.push('А як виглядає 88×88?');
+      if (/88×88|88\\88|розмір 88/i.test(text) && !/65/.test(text.toLowerCase())) ideas.push('А як виглядає 65×65?');
+      if (/двосторонн/i.test(text)) ideas.push('Покажіть різницю в принтах');
+      if (/принт/i.test(text)) ideas.push('Які є розміри?');
+      if (/доставк/i.test(text)) ideas.push('Які умови оплати?');
+      if (/оплат|реквізит|післяплат/i.test(text)) ideas.push('Чи є знижка від суми?');
+      if (/комплект|твіллі|резинк|кільце|маск|тюрбан|наволочк/i.test(text)) ideas.push('Покажіть аксесуари до хустинки');
+      if (/подарунок|подарунк/i.test(text)) ideas.push('Покажіть оформлення подарунка');
+      if (/шоурум|сагайдачн|графік/i.test(text)) ideas.push('А як замовити онлайн?');
+      // Default fallback
+      if (!ideas.length) ideas.push('Покажіть каталог принтів', 'Які є розміри хустинок?');
+      return Array.from(new Set(ideas)).slice(0, 2);
     }
 
     async function sendMessage() {
@@ -202,10 +345,13 @@
       appendUser(text);
       scrollBottom();
 
-      const typing = showTyping();
-      let botEl = null;
-      let botContentEl = null;
-      let acc = '';
+      showTyping();
+      const stream = {
+        acc: '',
+        botEl: null,
+        botContentEl: null,
+        renderedScenes: new Set()
+      };
 
       try {
         const r = await fetch(API_BASE + '/api/chat', {
@@ -217,7 +363,7 @@
         if (!r.ok) {
           if (r.status === 429) {
             const j = await r.json().catch(() => ({}));
-            typing.remove();
+            killTyping();
             appendBot(j.message || 'Вибачте, забагато повідомлень — спробуйте трохи пізніше 💛');
             return;
           }
@@ -232,7 +378,6 @@
           const { value, done } = await reader.read();
           if (done) break;
           buf += dec.decode(value, { stream: true });
-          // Parse SSE: separated by blank line
           let idx;
           while ((idx = buf.indexOf('\n\n')) >= 0) {
             const block = buf.slice(0, idx);
@@ -244,39 +389,39 @@
               const data = JSON.parse(dat[1]);
               const evName = ev ? ev[1] : 'message';
               if (evName === 'delta' && data.t) {
-                if (!botEl) {
-                  const t = document.getElementById('ob-typing'); if (t) t.remove();
-                  botEl = appendBot('');
-                  botContentEl = botEl.querySelector('.ob-bubble-msg');
+                if (!stream.botEl) {
+                  killTyping();
+                  stream.botEl = makeMsgEl('bot');
+                  stream.botContentEl = stream.botEl.querySelector('.ob-bubble-msg');
                 }
-                acc += data.t;
-                botContentEl.innerHTML = md(acc);
+                stream.acc += data.t;
+                stream.botContentEl.innerHTML = md(stream.acc);
+                maybeFlushScene(stream);
                 scrollBottom();
               } else if (evName === 'regenerate') {
-                // Backend decided to upgrade (Flash → Pro): clear current bubble, keep typing indicator
-                acc = '';
-                if (botEl) { botEl.remove(); botEl = null; botContentEl = null; }
-                if (!document.getElementById('ob-typing')) {
-                  const t2 = showTyping();
-                  // Replace local var so we can remove it on next delta
-                  // (typing local var will be garbage-collected)
-                }
+                stream.acc = '';
+                stream.renderedScenes.clear();
+                if (stream.botEl) { stream.botEl.remove(); stream.botEl = null; stream.botContentEl = null; }
+                if (!document.getElementById('ob-typing')) showTyping();
                 scrollBottom();
               } else if (evName === 'error') {
-                if (!botEl) {
-                  const t = document.getElementById('ob-typing'); if (t) t.remove();
-                  botEl = appendBot('');
-                  botContentEl = botEl.querySelector('.ob-bubble-msg');
+                if (!stream.botEl) {
+                  killTyping();
+                  stream.botEl = makeMsgEl('bot');
+                  stream.botContentEl = stream.botEl.querySelector('.ob-bubble-msg');
                 }
-                botContentEl.innerHTML = md(data.message || 'Щось пішло не так 💛');
+                stream.botContentEl.innerHTML = md(data.message || 'Щось пішло не так 💛');
               }
             } catch {}
           }
         }
-        if (acc) pushMsg('assistant', acc);
-        else { typing.remove(); appendBot('Вибачте, не вдалось отримати відповідь 💛 спробуєте ще раз? ✨'); }
+        if (stream.acc) {
+          pushMsg('assistant', stream.acc);
+          appendFollowUps(suggestFollowups(stream.acc));
+        }
+        else { killTyping(); appendBot('Вибачте, не вдалось отримати відповідь 💛 спробуєте ще раз? ✨'); }
       } catch (e) {
-        const t = document.getElementById('ob-typing'); if (t) t.remove();
+        killTyping();
         appendBot('Здається, у мене стався збій звʼязку 💛 спробуйте, будь ласка, ще раз ✨');
       } finally {
         busy = false;
@@ -285,19 +430,19 @@
       }
     }
 
-    // === Events ===
+    // === Event wiring ===
     function openPanel() {
       panel.classList.add('open');
-      greeter.classList.remove('show');
-      bubble.classList.remove('pulse');
+      if (greeter) greeter.classList.remove('show');
+      if (bubble) bubble.classList.remove('pulse');
       try { localStorage.setItem('obiimy_chat_seen', '1'); } catch {}
       setTimeout(() => input.focus(), 200);
     }
     function closePanel() { panel.classList.remove('open'); }
 
-    bubble.addEventListener('click', openPanel);
-    hclose.addEventListener('click', closePanel);
-    greeterClose.addEventListener('click', e => { e.stopPropagation(); greeter.classList.remove('show'); });
+    if (bubble) bubble.addEventListener('click', openPanel);
+    if (hclose) hclose.addEventListener('click', closePanel);
+    if (greeterClose) greeterClose.addEventListener('click', e => { e.stopPropagation(); greeter.classList.remove('show'); });
 
     input.addEventListener('input', () => {
       send.disabled = !input.value.trim();
@@ -309,18 +454,19 @@
     });
     send.addEventListener('click', sendMessage);
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && panel.classList.contains('open')) closePanel();
+      if (e.key === 'Escape' && MODE === 'bubble' && panel.classList.contains('open')) closePanel();
     });
 
-    // First-load greeter (only if user hasn't opened before)
-    let seen = false;
-    try { seen = localStorage.getItem('obiimy_chat_seen') === '1'; } catch {}
-    if (!seen) {
-      setTimeout(() => greeter.classList.add('show'), 1500);
-      setTimeout(() => greeter.classList.remove('show'), 8500);
+    if (MODE === 'bubble') {
+      let seen = false;
+      try { seen = localStorage.getItem('obiimy_chat_seen') === '1'; } catch {}
+      if (!seen) {
+        setTimeout(() => greeter && greeter.classList.add('show'), 1500);
+        setTimeout(() => greeter && greeter.classList.remove('show'), 8500);
+      }
     }
 
-    renderAll();
+    renderHistory();
   }
 
   init();

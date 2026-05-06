@@ -1,10 +1,11 @@
-// Obiimy chat backend — Express + SSE streaming proxy to Gemini (fallback OpenAI).
-// Karpathy-style: small, surgical, no over-engineering.
+// Obiimy chat backend — Express + SSE streaming proxy.
+// Primary: gemini-2.5-flash (cheap, empathic, scenario-following).
+// Auto-upgrade to gemini-2.5-pro on low-confidence answers.
+// Last-resort fallback: GPT-4o.
 
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
-const crypto = require('crypto');
 
 // Load .env if present (no dotenv dep needed)
 try {
@@ -18,6 +19,7 @@ try {
 } catch {}
 
 const { PERSONA } = require('./system-prompt');
+const { SCENARIOS } = require('./scenarios');
 
 const PORT = process.env.PORT || 8090;
 const GEMINI_KEY = process.env.GEMINI_API_KEY || '';
@@ -25,14 +27,13 @@ const OPENAI_KEY = process.env.OPENAI_API_KEY || '';
 const GEMINI_FLASH = process.env.GEMINI_FLASH_MODEL || 'gemini-2.5-flash';
 const GEMINI_PRO   = process.env.GEMINI_PRO_MODEL   || 'gemini-2.5-pro';
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o';
-// Heuristic for low-confidence Flash answers — triggers Pro retry.
 const LOW_CONF_RE = /(не\s+знаю|не\s+впевнен|не\s+певн|важко\s+сказати|не\s+маю\s+інформац|уточн[іи]ть.*менеджер)/i;
 
 const app = express();
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '256kb' }));
 
-// CORS — public widget; allow origin echo + preflight.
+// CORS
 app.use((req, res, next) => {
   const origin = req.headers.origin || '*';
   res.setHeader('Access-Control-Allow-Origin', origin);
@@ -43,18 +44,19 @@ app.use((req, res, next) => {
   next();
 });
 
-// Static widget assets (served from ../public)
+// Static
 app.use(express.static(path.join(__dirname, '..', 'public'), {
-  maxAge: '5m',
+  maxAge: '1h',
   setHeaders: (res, p) => {
     if (p.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+    if (p.endsWith('.webp') || p.endsWith('.png') || p.endsWith('.jpg')) res.setHeader('Cache-Control', 'public, max-age=86400');
   }
 }));
 
-// Tiny in-memory rate limit: 30 / hour per IP.
+// Rate limit: 30/h/IP
 const RATE_WINDOW_MS = 60 * 60 * 1000;
 const RATE_MAX = 30;
-const buckets = new Map(); // ip -> [timestamps]
+const buckets = new Map();
 function rateLimit(ip) {
   const now = Date.now();
   let arr = buckets.get(ip) || [];
@@ -72,23 +74,30 @@ app.get('/api/health', (_req, res) => {
     time: new Date().toISOString(),
     primary: GEMINI_KEY ? GEMINI_FLASH : null,
     pro: GEMINI_KEY ? GEMINI_PRO : null,
-    openai_fallback: OPENAI_KEY ? OPENAI_MODEL : null
+    openai_fallback: OPENAI_KEY ? OPENAI_MODEL : null,
+    scenarios: Object.keys(SCENARIOS).length
   });
 });
 
-// Trim history: keep last N user/assistant turns (paired) and within token budget.
+app.get('/api/scenarios', (_req, res) => {
+  const out = {};
+  for (const [k, s] of Object.entries(SCENARIOS)) {
+    out[k] = {
+      title: s.title,
+      images: Array.from({ length: s.count }, (_, i) => `/assets/scenarios/${k}/${i + 1}.webp`)
+    };
+  }
+  res.json(out);
+});
+
 function trimMessages(messages, maxTurns = 24) {
   const m = (messages || []).filter(x => x && (x.role === 'user' || x.role === 'assistant') && typeof x.content === 'string');
   if (m.length <= maxTurns) return m;
   return m.slice(m.length - maxTurns);
 }
-
-// Build OpenAI-format messages array (system + history)
 function buildMessages(history) {
   return [{ role: 'system', content: PERSONA }, ...trimMessages(history)];
 }
-
-// SSE writer helpers
 function sseWrite(res, event, data) {
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
@@ -98,7 +107,6 @@ function sseWrite(res, event, data) {
 async function streamGemini(history, onDelta, opts = {}) {
   const model = opts.model || GEMINI_FLASH;
   const thinkingBudget = opts.thinkingBudget ?? 512;
-  // Convert messages to Gemini format
   const sys = { role: 'user', parts: [{ text: PERSONA }] };
   const sysAck = { role: 'model', parts: [{ text: 'Зрозуміла. Я Вікторія з «Обійми», на звʼязку 💛' }] };
   const contents = [sys, sysAck];
@@ -166,7 +174,7 @@ async function streamGemini(history, onDelta, opts = {}) {
   if (!got) throw new Error('gemini empty stream');
 }
 
-// === OpenAI streaming (fallback) ===
+// === OpenAI streaming ===
 async function streamOpenAI(history, onDelta) {
   const r = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -209,7 +217,7 @@ async function streamOpenAI(history, onDelta) {
   }
 }
 
-// === /api/chat — SSE-streamed reply ===
+// === /api/chat ===
 app.post('/api/chat', async (req, res) => {
   const ip = (req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.ip || 'unknown')
     .toString().split(',')[0].trim();
@@ -222,7 +230,6 @@ app.post('/api/chat', async (req, res) => {
     return res.status(429).json({ error: 'rate_limit', message: 'Забагато повідомлень. Спробуйте за годину 💛' });
   }
 
-  // SSE headers
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
   res.setHeader('Connection', 'keep-alive');
@@ -241,7 +248,6 @@ app.post('/api/chat', async (req, res) => {
     if (!GEMINI_KEY && !OPENAI_KEY) throw new Error('no LLM keys configured');
 
     if (GEMINI_KEY) {
-      // 1) Try Flash first (fast + cheap; thinking budget 512 keeps reasoning crisp)
       try {
         await streamGemini(messages, onDelta, { model: GEMINI_FLASH, thinkingBudget: 512 });
       } catch (gErr) {
@@ -260,7 +266,7 @@ app.post('/api/chat', async (req, res) => {
         }
       }
 
-      // 2) Heuristic confidence check on Flash output → upgrade to Pro
+      // Heuristic confidence check on Flash output → upgrade to Pro
       const stripped = total.trim();
       const lowConf = used === 'flash' && (stripped.length < 200 || LOW_CONF_RE.test(stripped));
       if (lowConf) {
