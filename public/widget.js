@@ -3,7 +3,6 @@
   if (window.__obiimyChatLoaded) return;
   window.__obiimyChatLoaded = true;
 
-  // === Config ===
   const API_BASE = (window.__OBIIMY_API_BASE__ || (function () {
     const me = document.currentScript || document.querySelector('script[src*="widget.js"]');
     if (me) return new URL(me.src).origin;
@@ -11,7 +10,7 @@
   })()).replace(/\/$/, '');
 
   const POSITION = window.__OBIIMY_POSITION__ || 'right';
-  const MODE = window.__OBIIMY_MODE__ || 'bubble'; // 'bubble' | 'fullscreen'
+  const MODE = window.__OBIIMY_MODE__ || 'bubble';
   const STORAGE_KEY = 'obiimy_chat_v2';
   const MAX_HISTORY = 50;
 
@@ -25,15 +24,14 @@
   const SVG = {
     chat: '<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 3C6.48 3 2 6.81 2 11.5c0 2.27 1.06 4.34 2.8 5.86L4 21l4.16-1.69c1.18.41 2.47.69 3.84.69 5.52 0 10-3.81 10-8.5S17.52 3 12 3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" fill="rgba(255,255,255,.18)"/><circle cx="8.5" cy="11.5" r="1.2" fill="currentColor"/><circle cx="12" cy="11.5" r="1.2" fill="currentColor"/><circle cx="15.5" cy="11.5" r="1.2" fill="currentColor"/></svg>',
     close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6l-12 12"/></svg>',
-    send:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.4 20.4l17.4-7.5c.8-.4.8-1.5 0-1.8L3.4 3.6c-.7-.3-1.4.4-1.2 1.1L4 11.5l13 .5L4 12.5l-1.8 6.8c-.2.7.5 1.4 1.2 1.1z"/></svg>'
+    send:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.4 20.4l17.4-7.5c.8-.4.8-1.5 0-1.8L3.4 3.6c-.7-.3-1.4.4-1.2 1.1L4 11.5l13 .5L4 12.5l-1.8 6.8c-.2.7.5 1.4 1.2 1.1z"/></svg>',
+    arrow: '<svg class="ob-arrow" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3.5 8h9M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'
   };
 
-  // === Markdown renderer ===
   function escapeHtml(s) {
     return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   }
   function md(text) {
-    // Strip [[SCENE:...]] markers BEFORE escaping (they're rendered separately)
     const cleaned = text.replace(/\[\[SCENE:[a-z0-9_]+\]\]/gi, '').trim();
     let s = escapeHtml(cleaned);
     s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>');
@@ -60,7 +58,6 @@
     return s;
   }
 
-  // === Persistence ===
   function loadHistory() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -73,12 +70,10 @@
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ sid: state.sid, msgs: state.msgs.slice(-MAX_HISTORY) })); } catch {}
   }
 
-  // === Mobile viewport fix (iOS Safari dynamic toolbar) ===
   function setAppHeight() {
     document.documentElement.style.setProperty('--ob-app-height', window.innerHeight + 'px');
   }
 
-  // === DOM build ===
   function build() {
     const root = document.createElement('div');
     root.id = 'obiimy-chat-root';
@@ -124,9 +119,7 @@
     setAppHeight();
     window.addEventListener('resize', setAppHeight);
     window.addEventListener('orientationchange', setAppHeight);
-    if (window.visualViewport) {
-      window.visualViewport.addEventListener('resize', setAppHeight);
-    }
+    if (window.visualViewport) window.visualViewport.addEventListener('resize', setAppHeight);
 
     const root = build();
     const bubble = root.querySelector('#ob-bubble');
@@ -142,7 +135,6 @@
     let busy = false;
     let scenarios = {};
 
-    // Fetch scenarios manifest
     fetch(API_BASE + '/api/scenarios').then(r => r.json()).then(j => { scenarios = j; }).catch(() => {});
 
     function pushMsg(role, content) {
@@ -168,8 +160,7 @@
     }
     function appendBot(text) {
       const el = makeMsgEl('bot');
-      const c = el.querySelector('.ob-bubble-msg');
-      c.innerHTML = md(text);
+      el.querySelector('.ob-bubble-msg').innerHTML = md(text);
       return el;
     }
     function appendScene(key) {
@@ -185,7 +176,6 @@
         <div class="ob-mavt"><img src="${API_BASE}/assets/logo.webp" alt="" onerror="this.style.display='none';this.parentNode.textContent='В'"></div>
         <div class="ob-scene${isCarousel ? ' ob-scene-grid' : ''}">${grid}</div>
       `;
-      // Lightbox on click
       wrap.querySelectorAll('.ob-scene-img').forEach(img => img.addEventListener('click', () => openLightbox(img.src)));
       body.appendChild(wrap);
       return wrap;
@@ -211,22 +201,19 @@
       body.appendChild(q);
     }
     function appendFollowUps(suggestions) {
-      // suggestions: array of strings — render as right-aligned outline-orange pills
       if (!suggestions || !suggestions.length) return;
       const q = document.createElement('div');
       q.className = 'ob-followups';
-      const ARROW = '<svg class="ob-arrow" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3.5 8h9M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
       suggestions.slice(0, 3).forEach((s, i) => {
         const b = document.createElement('button');
         b.className = 'ob-followup';
         b.style.animationDelay = (i * 60) + 'ms';
-        b.innerHTML = '<span class="ob-followup-text"></span>' + ARROW;
+        b.innerHTML = '<span class="ob-followup-text"></span>' + SVG.arrow;
         b.querySelector('.ob-followup-text').textContent = s;
         b.addEventListener('click', () => {
           if (b.classList.contains('ob-clicked')) return;
           b.classList.add('ob-clicked');
           q.classList.add('ob-pills-leaving');
-          // Wait for the pick animation, then send (sendMessage will clear all pill containers)
           setTimeout(() => {
             input.value = s;
             sendMessage();
@@ -254,7 +241,6 @@
       const t = document.getElementById('ob-typing'); if (t) t.remove();
     }
 
-    // Welcome typewriter (only if no history yet)
     function welcomeTypewriter(onDone) {
       const text = 'Вітаю в Обіймах 🫂💛\nЯ Вікторія, рада допомогти ✨\nПідкажіть, що вас цікавить?';
       const el = makeMsgEl('bot');
@@ -271,27 +257,6 @@
       tick();
     }
 
-    function renderHistory() {
-      body.innerHTML = '';
-      if (!state.msgs.length) {
-        welcomeTypewriter(() => appendQuickReplies());
-        return;
-      }
-      // Re-render full history
-      for (const m of state.msgs) {
-        if (m.role === 'user') appendUser(m.content);
-        else {
-          // Bot history may have scenes intermixed
-          const parts = splitContentByScene(m.content);
-          for (const p of parts) {
-            if (p.kind === 'text' && p.text.trim()) appendBot(p.text);
-            else if (p.kind === 'scene') appendScene(p.key);
-          }
-        }
-      }
-      scrollBottom();
-    }
-
     function splitContentByScene(text) {
       const re = /\[\[SCENE:([a-z0-9_]+)\]\]/gi;
       const out = [];
@@ -305,34 +270,46 @@
       return out;
     }
 
-    // Detect inline scenes during streaming and render them as soon as the marker is complete
-    function maybeFlushScene(state) {
-      // state.acc is full accumulated text. Find any [[SCENE:KEY]] not already rendered.
+    function renderHistory() {
+      body.innerHTML = '';
+      if (!state.msgs.length) {
+        welcomeTypewriter(() => appendQuickReplies());
+        return;
+      }
+      for (const m of state.msgs) {
+        if (m.role === 'user') appendUser(m.content);
+        else {
+          const parts = splitContentByScene(m.content);
+          for (const p of parts) {
+            if (p.kind === 'text' && p.text.trim()) appendBot(p.text);
+            else if (p.kind === 'scene') appendScene(p.key);
+          }
+        }
+      }
+      scrollBottom();
+    }
+
+    function maybeFlushScene(stream) {
       const re = /\[\[SCENE:([a-z0-9_]+)\]\]/gi;
       let m;
-      while ((m = re.exec(state.acc))) {
-        if (!state.renderedScenes.has(m.index)) {
-          state.renderedScenes.add(m.index);
-          // Close current bot bubble (if it has any visible text), render scene, open a new bubble
-          if (state.botEl && state.botContentEl) {
-            // If bubble has no rendered text yet, remove the empty one before scene
-            const visible = (state.botContentEl.innerText || '').trim();
-            if (!visible) state.botEl.remove();
+      while ((m = re.exec(stream.acc))) {
+        if (!stream.renderedScenes.has(m.index)) {
+          stream.renderedScenes.add(m.index);
+          if (stream.botEl && stream.botContentEl) {
+            const visible = (stream.botContentEl.innerText || '').trim();
+            if (!visible) stream.botEl.remove();
           }
           appendScene(m[1]);
-          // Reset bot bubble for subsequent text after the marker
-          state.botEl = null; state.botContentEl = null;
+          stream.botEl = null; stream.botContentEl = null;
           scrollBottom();
         }
       }
     }
 
-    // Generate smart follow-up suggestions based on bot's last reply (heuristic, no extra API call)
     function suggestFollowups(text) {
-      const t = text.toLowerCase();
       const ideas = [];
-      if (/65×65|65\\65|розмір 65/i.test(text) && !/88/.test(text.toLowerCase())) ideas.push('А як виглядає 88×88?');
-      if (/88×88|88\\88|розмір 88/i.test(text) && !/65/.test(text.toLowerCase())) ideas.push('А як виглядає 65×65?');
+      if (/65×65|65\\65|розмір 65/i.test(text) && !/88/.test(text)) ideas.push('А як виглядає 88×88?');
+      if (/88×88|88\\88|розмір 88/i.test(text) && !/65/.test(text)) ideas.push('А як виглядає 65×65?');
       if (/двосторонн/i.test(text)) ideas.push('Покажіть різницю в принтах');
       if (/принт/i.test(text)) ideas.push('Які є розміри?');
       if (/доставк/i.test(text)) ideas.push('Які умови оплати?');
@@ -340,7 +317,6 @@
       if (/комплект|твіллі|резинк|кільце|маск|тюрбан|наволочк/i.test(text)) ideas.push('Покажіть аксесуари до хустинки');
       if (/подарунок|подарунк/i.test(text)) ideas.push('Покажіть оформлення подарунка');
       if (/шоурум|сагайдачн|графік/i.test(text)) ideas.push('А як замовити онлайн?');
-      // Default fallback
       if (!ideas.length) ideas.push('Покажіть каталог принтів', 'Які є розміри хустинок?');
       return Array.from(new Set(ideas)).slice(0, 2);
     }
@@ -359,12 +335,7 @@
       scrollBottom();
 
       showTyping();
-      const stream = {
-        acc: '',
-        botEl: null,
-        botContentEl: null,
-        renderedScenes: new Set()
-      };
+      const stream = { acc: '', botEl: null, botContentEl: null, renderedScenes: new Set() };
 
       try {
         const r = await fetch(API_BASE + '/api/chat', {
@@ -431,8 +402,10 @@
         if (stream.acc) {
           pushMsg('assistant', stream.acc);
           appendFollowUps(suggestFollowups(stream.acc));
+        } else {
+          killTyping();
+          appendBot('Вибачте, не вдалось отримати відповідь 💛 спробуєте ще раз? ✨');
         }
-        else { killTyping(); appendBot('Вибачте, не вдалось отримати відповідь 💛 спробуєте ще раз? ✨'); }
       } catch (e) {
         killTyping();
         appendBot('Здається, у мене стався збій звʼязку 💛 спробуйте, будь ласка, ще раз ✨');
@@ -443,7 +416,6 @@
       }
     }
 
-    // === Event wiring ===
     function openPanel() {
       panel.classList.add('open');
       if (greeter) greeter.classList.remove('show');
@@ -459,4 +431,28 @@
 
     input.addEventListener('input', () => {
       send.disabled = !input.value.trim();
-      inpu
+      input.style.height = 'auto';
+      input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+    });
+    send.addEventListener('click', sendMessage);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && MODE === 'bubble' && panel.classList.contains('open')) closePanel();
+    });
+
+    if (MODE === 'bubble') {
+      let seen = false;
+      try { seen = localStorage.getItem('obiimy_chat_seen') === '1'; } catch {}
+      if (!seen) {
+        setTimeout(() => greeter && greeter.classList.add('show'), 1500);
+        setTimeout(() => greeter && greeter.classList.remove('show'), 8500);
+      }
+    }
+
+    renderHistory();
+  }
+
+  init();
+})();
