@@ -211,21 +211,34 @@
       body.appendChild(q);
     }
     function appendFollowUps(suggestions) {
-      // suggestions: array of strings
+      // suggestions: array of strings — render as right-aligned outline-orange pills
       if (!suggestions || !suggestions.length) return;
       const q = document.createElement('div');
-      q.className = 'ob-quicks ob-followups ob-pop';
-      suggestions.slice(0, 3).forEach(s => {
+      q.className = 'ob-followups';
+      const ARROW = '<svg class="ob-arrow" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M3.5 8h9M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+      suggestions.slice(0, 3).forEach((s, i) => {
         const b = document.createElement('button');
-        b.className = 'ob-quick';
-        b.textContent = s;
-        b.onclick = () => { input.value = s; sendMessage(); };
+        b.className = 'ob-followup';
+        b.style.animationDelay = (i * 60) + 'ms';
+        b.innerHTML = '<span class="ob-followup-text"></span>' + ARROW;
+        b.querySelector('.ob-followup-text').textContent = s;
+        b.addEventListener('click', () => {
+          if (b.classList.contains('ob-clicked')) return;
+          b.classList.add('ob-clicked');
+          q.classList.add('ob-pills-leaving');
+          // Wait for the pick animation, then send (sendMessage will clear all pill containers)
+          setTimeout(() => {
+            input.value = s;
+            sendMessage();
+          }, 200);
+        });
         q.appendChild(b);
       });
       body.appendChild(q);
+      scrollBottom();
     }
     function clearQuicks() {
-      document.querySelectorAll('.ob-quicks').forEach(el => el.remove());
+      body.querySelectorAll('.ob-quicks, .ob-followups').forEach(el => el.remove());
     }
     function scrollBottom() { body.scrollTop = body.scrollHeight; }
     function showTyping() {
@@ -446,28 +459,4 @@
 
     input.addEventListener('input', () => {
       send.disabled = !input.value.trim();
-      input.style.height = 'auto';
-      input.style.height = Math.min(input.scrollHeight, 120) + 'px';
-    });
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-    });
-    send.addEventListener('click', sendMessage);
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && MODE === 'bubble' && panel.classList.contains('open')) closePanel();
-    });
-
-    if (MODE === 'bubble') {
-      let seen = false;
-      try { seen = localStorage.getItem('obiimy_chat_seen') === '1'; } catch {}
-      if (!seen) {
-        setTimeout(() => greeter && greeter.classList.add('show'), 1500);
-        setTimeout(() => greeter && greeter.classList.remove('show'), 8500);
-      }
-    }
-
-    renderHistory();
-  }
-
-  init();
-})();
+      inpu
