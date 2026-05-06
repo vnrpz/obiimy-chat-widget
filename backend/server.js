@@ -118,7 +118,7 @@ async function streamGemini(history, onDelta, opts = {}) {
     generationConfig: {
       temperature: 0.75,
       topP: 0.95,
-      maxOutputTokens: 1024,
+      maxOutputTokens: 2048,
       thinkingConfig: { thinkingBudget }
     },
     safetySettings: [
@@ -221,7 +221,7 @@ app.post('/api/chat', async (req, res) => {
 
     if (GEMINI_KEY) {
       try {
-        await streamGemini(messages, onDelta, { model: GEMINI_FLASH, thinkingBudget: 512 });
+        await streamGemini(messages, onDelta, { model: GEMINI_FLASH, thinkingBudget: 256 });
       } catch (gErr) {
         console.warn('[chat] flash failed:', gErr.message);
         used = 'pro';
