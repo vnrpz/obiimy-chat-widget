@@ -22,7 +22,7 @@
   -webkit-font-smoothing: antialiased;
 }
 
-/* === Bubble mode (floating) === */
+/* === Bubble mode === */
 #obiimy-chat-root.ob-bubble {
   position: fixed;
   z-index: 2147483600;
@@ -32,7 +32,7 @@
 }
 #obiimy-chat-root.ob-bubble.left { right: auto; left: 22px; }
 
-/* === Fullscreen mode (own page) === */
+/* === Fullscreen mode === */
 #obiimy-chat-root.ob-fullscreen {
   position: fixed;
   inset: 0;
@@ -57,8 +57,7 @@
 .ob-bubble:active { transform: scale(.96); }
 .ob-bubble svg { width: 30px; height: 30px; }
 
-.ob-bubble.pulse::before,
-.ob-bubble.pulse::after {
+.ob-bubble.pulse::before, .ob-bubble.pulse::after {
   content: '';
   position: absolute; inset: 0; border-radius: 50%;
   border: 2px solid var(--ob-gold);
@@ -112,7 +111,6 @@
 #obiimy-chat-root.ob-bubble .ob-panel.open { opacity: 1; transform: translateY(0) scale(1); }
 #obiimy-chat-root.ob-bubble.left .ob-panel { right: auto; left: 0; transform-origin: bottom left; }
 
-/* Fullscreen panel — full viewport, brand background pattern */
 .ob-panel.ob-panel-fs {
   position: fixed;
   inset: 0;
@@ -241,9 +239,7 @@
   grid-template-columns: 1fr;
   max-width: 78%;
 }
-.ob-msg-scene .ob-scene-grid {
-  grid-template-columns: 1fr 1fr;
-}
+.ob-msg-scene .ob-scene-grid { grid-template-columns: 1fr 1fr; }
 .ob-scene-img {
   width: 100%;
   aspect-ratio: 1 / 1.25;
@@ -293,7 +289,7 @@
   40%           { transform: scale(1); opacity: 1; }
 }
 
-/* === Initial quick replies (after welcome) === */
+/* === Initial quick replies === */
 .ob-quicks {
   display: flex; flex-wrap: wrap; gap: 6px;
   margin: 4px 0 14px 38px;
@@ -311,7 +307,7 @@
 }
 .ob-quick:hover { background: #FFF8E6; border-color: var(--ob-gold); transform: translateY(-1px); }
 
-/* === Smart follow-ups (after AI reply) — right-aligned outline pills === */
+/* === Smart follow-ups (right-aligned outline-orange pills) === */
 .ob-followups {
   display: flex; flex-direction: column; align-items: flex-end;
   gap: 6px;
@@ -335,12 +331,7 @@
   opacity: 0;
   transform: translateY(6px) scale(.94);
   animation: ob-pill-in .35s cubic-bezier(.2,.9,.3,1.3) forwards;
-  transition:
-    background-color .2s ease,
-    color .2s ease,
-    border-color .2s ease,
-    transform .18s ease,
-    box-shadow .2s ease;
+  transition: background-color .2s ease, color .2s ease, border-color .2s ease, transform .18s ease, box-shadow .2s ease;
   white-space: normal;
   word-break: break-word;
 }
@@ -366,12 +357,8 @@
   animation: ob-pill-out .2s ease forwards;
 }
 
-@keyframes ob-pill-in {
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-@keyframes ob-pill-out {
-  to { opacity: 0; transform: translateY(-3px) scale(.96); }
-}
+@keyframes ob-pill-in   { to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes ob-pill-out  { to { opacity: 0; transform: translateY(-3px) scale(.96); } }
 @keyframes ob-pill-pick {
   0%   { background: var(--ob-orange, #E8862C); color: #fff; transform: translateY(-1px) scale(1); }
   100% { background: linear-gradient(135deg, var(--ob-gold-2), var(--ob-gold)); color: #fff; transform: translateY(0) scale(.92); opacity: 0; }
@@ -387,10 +374,99 @@
   bottom: 0;
 }
 .ob-input-wrap {
-  display: flex; align-items: flex-end;
-  gap: 8px;
-  background: var(--ob-bg);
-  border: 1px solid var(--ob-line);
-  border-radius: 18px;
-  padding: 8px 8px 8px 14px;
+  display: flex; align-items: center;
+  gap: 10px;
+  background: #fff;
+  border: 1.5px solid var(--ob-line);
+  border-radius: 24px;
+  padding: 6px 6px 6px 16px;
   transition: border-color .15s ease, box-shadow .15s ease;
+  box-shadow: 0 1px 2px rgba(23,16,10,.04);
+  flex-shrink: 0;
+}
+.ob-input-wrap:focus-within {
+  border-color: var(--ob-orange, #E8862C);
+  box-shadow: 0 0 0 3px rgba(232,134,44,.15), 0 1px 4px rgba(23,16,10,.06);
+}
+.ob-input {
+  flex: 1 1 auto;
+  resize: none;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 16px;
+  font-family: inherit;
+  color: var(--ob-text);
+  max-height: 120px;
+  min-height: 22px;
+  line-height: 1.45;
+  padding: 6px 0;
+  min-width: 0;
+}
+.ob-input::placeholder { color: var(--ob-text-mute); }
+.ob-send {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: linear-gradient(135deg, #F19A3F, var(--ob-orange, #E8862C));
+  color: #fff;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: transform .12s ease, opacity .12s ease, box-shadow .15s ease;
+  flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(232,134,44,.32);
+}
+.ob-send:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
+.ob-send:not(:disabled):hover { transform: scale(1.06); box-shadow: 0 6px 16px rgba(232,134,44,.45); }
+.ob-send:not(:disabled):active { transform: scale(.94); }
+.ob-send svg { width: 18px; height: 18px; }
+
+.ob-footnote {
+  text-align: center; font-size: 10.5px; color: var(--ob-text-mute); margin-top: 6px;
+  letter-spacing: .02em;
+}
+.ob-footnote span { color: var(--ob-gold-deep); font-weight: 500; }
+
+/* === Mobile === */
+@media (max-width: 480px) {
+  #obiimy-chat-root.ob-bubble { bottom: 14px; right: 14px; }
+  #obiimy-chat-root.ob-bubble .ob-bubble { width: 56px; height: 56px; }
+  #obiimy-chat-root.ob-bubble .ob-bubble svg { width: 26px; height: 26px; }
+  #obiimy-chat-root.ob-bubble .ob-greeter { max-width: 200px; font-size: 13px; }
+  #obiimy-chat-root.ob-bubble .ob-panel {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100dvh;
+    height: var(--ob-app-height, 100dvh);
+    max-height: 100dvh;
+    max-height: var(--ob-app-height, 100dvh);
+    border-radius: 0;
+    bottom: 0; right: 0;
+  }
+  #obiimy-chat-root.ob-bubble .ob-panel.open ~ .ob-bubble { display: none; }
+
+  /* Footer / input bar — clearly tappable control */
+  .ob-foot {
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  }
+  .ob-input-wrap {
+    border-radius: 26px;
+    padding: 6px 6px 6px 18px;
+    gap: 8px;
+    min-height: 52px;
+  }
+  .ob-input {
+    min-height: 24px;
+    padding: 12px 0;
+    line-height: 1.4;
+  }
+  .ob-send {
+    width: 44px; height: 44px;
+  }
+  .ob-send svg { width: 20px; height: 20px; }
+  .ob-footnote { display: none; }
+}
+
+/* hide bubble while panel open on desktop too */
+#obiimy-chat-root.ob-bubble .ob-panel.open + .ob-bubble { transform: scale(0); pointer-events: none; }
