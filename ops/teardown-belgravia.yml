@@ -1,0 +1,33 @@
+name: Tear down obiimy-chat from belgravia
+on:
+  workflow_dispatch: {}
+jobs:
+  teardown:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+      - run: |
+          set -e
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          ssh-keyscan -H "${{ secrets.SERVER_IP }}" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh root@${{ secrets.SERVER_IP }} bash -s <<'REMOTE'
+          set -euo pipefail
+          # Stop pm2 process
+          pm2 delete obiimy-chat 2>/dev/null || echo "no pm2 obiimy-chat"
+          pm2 save
+          # Remove nginx site
+          rm -f /etc/nginx/sites-enabled/obiimy-chat
+          rm -f /etc/nginx/sites-available/obiimy-chat
+          nginx -t && systemctl reload nginx
+          # Remove app directory
+          rm -rf /var/www/obiimy-chat
+          echo "--- pm2 list ---"
+          pm2 list
+          echo "--- nginx sites ---"
+          ls /etc/nginx/sites-enabled/
+          echo "--- bind ports ---"
+          ss -lntp 2>/dev/null | grep -E ':80|:443|:8090' || true
+          REMOTE

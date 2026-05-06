@@ -1,0 +1,128 @@
+name: Deploy Obiimy Chat (agenteon droplet)
+
+on:
+  workflow_dispatch: {}
+  repository_dispatch:
+    types: [obiimy-chat-deploy]
+
+concurrency:
+  group: deploy-obiimy-chat-agenteon
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      TARGET_IP: 46.101.190.165
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: vnrpz/obiimy-chat-widget
+          ref: main
+
+      - name: SSH agent
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.DEPLOY_SSH_KEY }}
+
+      - name: known_hosts
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          ssh-keyscan -H "$TARGET_IP" >> ~/.ssh/known_hosts 2>/dev/null
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Rsync to /var/www/obiimy-chat/
+        run: |
+          ssh root@$TARGET_IP "mkdir -p /var/www/obiimy-chat"
+          rsync -az --delete \
+            --exclude='.git/' --exclude='.github/' --exclude='README.md' \
+            --exclude='.gitignore' --exclude='node_modules/' --exclude='backend/.env' \
+            --exclude='deploy-*.yml' --exclude='probe-*.yml' \
+            ./ root@$TARGET_IP:/var/www/obiimy-chat/
+
+      - name: Write .env
+        env:
+          GEMINI_API_KEY: ${{ secrets.OBIIMY_GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OBIIMY_OPENAI_API_KEY }}
+        run: |
+          ssh root@$TARGET_IP bash -s <<REMOTE
+          set -euo pipefail
+          mkdir -p /var/www/obiimy-chat/backend
+          umask 077
+          cat > /var/www/obiimy-chat/backend/.env <<EOF
+          GEMINI_API_KEY=$GEMINI_API_KEY
+          OPENAI_API_KEY=$OPENAI_API_KEY
+          GEMINI_FLASH_MODEL=gemini-2.5-flash
+          GEMINI_PRO_MODEL=gemini-2.5-pro
+          OPENAI_MODEL=gpt-4o
+          PORT=8090
+          NODE_ENV=production
+          EOF
+          chmod 600 /var/www/obiimy-chat/backend/.env
+          REMOTE
+
+      - name: Install + start
+        run: |
+          ssh root@$TARGET_IP bash -s <<'REMOTE'
+          set -euo pipefail
+          cd /var/www/obiimy-chat/backend
+          if ! command -v node >/dev/null 2>&1; then
+            curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+            apt-get install -y nodejs
+          fi
+          if ! command -v pm2 >/dev/null 2>&1; then
+            npm install -g pm2
+          fi
+          npm install --omit=dev --no-audit --no-fund
+          pm2 startOrReload ecosystem.config.js --update-env || pm2 start ecosystem.config.js
+          pm2 save
+          sleep 1
+          curl -sS --max-time 5 http://127.0.0.1:8090/api/health
+          echo
+          REMOTE
+
+      - name: Configure Caddy
+        run: |
+          ssh root@$TARGET_IP bash -s <<'REMOTE'
+          set -euo pipefail
+          DOMAIN="obiimy-chat.eon.plus"
+          CADDYFILE=/etc/caddy/Caddyfile
+          BLOCK_FILE=/etc/caddy/obiimy-chat.caddy
+
+          cat > "$BLOCK_FILE" <<CADDY
+          $DOMAIN {
+              encode gzip
+              header {
+                  X-Content-Type-Options nosniff
+                  Referrer-Policy strict-origin-when-cross-origin
+                  Strict-Transport-Security "max-age=31536000"
+              }
+              reverse_proxy 127.0.0.1:8090 {
+                  flush_interval -1
+                  transport http {
+                      read_timeout 120s
+                      response_header_timeout 120s
+                  }
+              }
+          }
+          CADDY
+          chmod 644 "$BLOCK_FILE"
+
+          if ! grep -q "import /etc/caddy/obiimy-chat.caddy" "$CADDYFILE" 2>/dev/null; then
+              echo "" >> "$CADDYFILE"
+              echo "import /etc/caddy/obiimy-chat.caddy" >> "$CADDYFILE"
+          fi
+
+          caddy validate --config "$CADDYFILE" --adapter caddyfile
+          systemctl reload caddy
+          echo "--- listening ---"
+          ss -lntp 2>/dev/null | grep -E ':80|:443|:8090' || true
+          REMOTE
+
+      - name: Smoke
+        run: |
+          sleep 4
+          curl -sS --max-time 10 -H "Host: obiimy-chat.eon.plus" http://$TARGET_IP/api/health || true
+          echo
+          curl -sS --max-time 15 https://obiimy-chat.eon.plus/api/health 2>/dev/null || echo "(SSL still issuing — Caddy may take a moment)"
