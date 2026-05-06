@@ -33,7 +33,6 @@ const app = express();
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '256kb' }));
 
-// CORS
 app.use((req, res, next) => {
   const origin = req.headers.origin || '*';
   res.setHeader('Access-Control-Allow-Origin', origin);
@@ -44,7 +43,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Static
 app.use(express.static(path.join(__dirname, '..', 'public'), {
   maxAge: '1h',
   setHeaders: (res, p) => {
@@ -53,7 +51,6 @@ app.use(express.static(path.join(__dirname, '..', 'public'), {
   }
 }));
 
-// Rate limit: 30/h/IP
 const RATE_WINDOW_MS = 60 * 60 * 1000;
 const RATE_MAX = 30;
 const buckets = new Map();
@@ -103,7 +100,6 @@ function sseWrite(res, event, data) {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
-// === Gemini streaming ===
 async function streamGemini(history, onDelta, opts = {}) {
   const model = opts.model || GEMINI_FLASH;
   const thinkingBudget = opts.thinkingBudget ?? 512;
@@ -132,11 +128,7 @@ async function streamGemini(history, onDelta, opts = {}) {
       { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' }
     ]
   };
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
+  const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   if (!r.ok) {
     const txt = await r.text().catch(() => '');
     throw new Error(`gemini http ${r.status}: ${txt.slice(0, 300)}`);
@@ -174,21 +166,11 @@ async function streamGemini(history, onDelta, opts = {}) {
   if (!got) throw new Error('gemini empty stream');
 }
 
-// === OpenAI streaming ===
 async function streamOpenAI(history, onDelta) {
   const r = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${OPENAI_KEY}`
-    },
-    body: JSON.stringify({
-      model: OPENAI_MODEL,
-      stream: true,
-      temperature: 0.75,
-      max_tokens: 1024,
-      messages: buildMessages(history)
-    })
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${OPENAI_KEY}` },
+    body: JSON.stringify({ model: OPENAI_MODEL, stream: true, temperature: 0.75, max_tokens: 1024, messages: buildMessages(history) })
   });
   if (!r.ok) {
     const txt = await r.text().catch(() => '');
@@ -217,18 +199,11 @@ async function streamOpenAI(history, onDelta) {
   }
 }
 
-// === /api/chat ===
 app.post('/api/chat', async (req, res) => {
-  const ip = (req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.ip || 'unknown')
-    .toString().split(',')[0].trim();
-
+  const ip = (req.headers['cf-connecting-ip'] || req.headers['x-forwarded-for'] || req.ip || 'unknown').toString().split(',')[0].trim();
   const messages = Array.isArray(req.body?.messages) ? req.body.messages : null;
-  if (!messages || !messages.length) {
-    return res.status(400).json({ error: 'messages required' });
-  }
-  if (!rateLimit(ip)) {
-    return res.status(429).json({ error: 'rate_limit', message: 'Забагато повідомлень. Спробуйте за годину 💛' });
-  }
+  if (!messages || !messages.length) return res.status(400).json({ error: 'messages required' });
+  if (!rateLimit(ip)) return res.status(429).json({ error: 'rate_limit', message: 'Забагато повідомлень. Спробуйте за годину 💛' });
 
   res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
   res.setHeader('Cache-Control', 'no-cache, no-transform');
@@ -237,10 +212,7 @@ app.post('/api/chat', async (req, res) => {
   res.flushHeaders?.();
 
   let total = '';
-  const onDelta = (t) => {
-    total += t;
-    sseWrite(res, 'delta', { t });
-  };
+  const onDelta = (t) => { total += t; sseWrite(res, 'delta', { t }); };
 
   const startedAt = Date.now();
   let used = 'flash';
@@ -266,9 +238,12 @@ app.post('/api/chat', async (req, res) => {
         }
       }
 
-      // Heuristic confidence check on Flash output → upgrade to Pro
+      // Heuristic confidence check on Flash output → upgrade to Pro.
+      // Skip if the answer contains a [[SCENE:...]] marker (the model knew enough to invoke a scenario).
       const stripped = total.trim();
-      const lowConf = used === 'flash' && (stripped.length < 200 || LOW_CONF_RE.test(stripped));
+      const hasScene = /\[\[SCENE:[a-z0-9_]+\]\]/i.test(stripped);
+      const tooShort = stripped.length < 80;
+      const lowConf = used === 'flash' && !hasScene && (tooShort || LOW_CONF_RE.test(stripped));
       if (lowConf) {
         console.log('[chat] flash low-confidence, upgrading to pro:', stripped.length, 'chars');
         used = 'pro';
