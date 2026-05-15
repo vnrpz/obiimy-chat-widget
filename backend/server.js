@@ -24,6 +24,103 @@ try {
 const { PERSONA } = require("./system-prompt");
 const { SCENARIOS } = require("./scenarios");
 
+// ---- Telegram dialog logging (fire-and-forget) ----
+const TG_LOG_TOKEN = process.env.TG_LOG_TOKEN || "";
+const TG_LOG_CHAT_ID = process.env.TG_LOG_CHAT_ID || "";
+const TG_TZ = "Europe/Kyiv";
+const TG_KNOWN_SESSIONS = new Set();
+const TG_MAX = 3500;
+
+function escHtml(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+function truncate(s, max = TG_MAX) {
+  if (!s) return "";
+  const len = [...s].length;
+  if (len <= max) return s;
+  const head = [...s].slice(0, max).join("");
+  return head + " ... [+" + (len - max) + " chars]";
+}
+function uaTime() {
+  try {
+    return new Date().toLocaleString("uk-UA", { timeZone: TG_TZ, hour12: false });
+  } catch {
+    return new Date().toISOString();
+  }
+}
+function tgSend(text) {
+  if (!TG_LOG_TOKEN || !TG_LOG_CHAT_ID) return;
+  // Fire and forget — never block the request
+  try {
+    fetch("https://api.telegram.org/bot" + TG_LOG_TOKEN + "/sendMessage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: TG_LOG_CHAT_ID,
+        text,
+        parse_mode: "HTML",
+        disable_web_page_preview: true,
+        disable_notification: true
+      })
+    }).then(r => {
+      if (!r.ok) r.text().then(t => console.warn("[tg-log] non-2xx", r.status, t.slice(0, 200))).catch(() => {});
+    }).catch(e => console.warn("[tg-log] fetch err:", e && e.message));
+  } catch (e) {
+    console.warn("[tg-log] sync err:", e && e.message);
+  }
+}
+function tgLogUser({ sid, sidShort, lastUser, isNew, ip, ua }) {
+  if (!TG_LOG_TOKEN || !TG_LOG_CHAT_ID) return;
+  if (isNew) {
+    tgSend(
+      "\ud83c\udd95 <b>Obiimy — нова сесія</b>\n" +
+      "\ud83d\udc64 session: <code>" + escHtml(sidShort) + "</code>\n" +
+      "\ud83c\udf10 ip: <code>" + escHtml(ip) + "</code>\n" +
+      "\ud83e\uddfe ua: <code>" + escHtml(truncate(ua, 200)) + "</code>"
+    );
+  }
+  tgSend(
+    "\ud83d\udcac <b>Obiimy — нове повідомлення</b>\n" +
+    "\ud83d\udc64 session: <code>" + escHtml(sidShort) + "</code>\n" +
+    "\ud83d\udcdd «" + escHtml(truncate(lastUser, TG_MAX)) + "»\n" +
+    "\ud83d\udd52 " + escHtml(uaTime())
+  );
+}
+function tgLogBot({ sidShort, reply, provider, ms, attempts }) {
+  if (!TG_LOG_TOKEN || !TG_LOG_CHAT_ID) return;
+  tgSend(
+    "\ud83e\udd16 <b>Obiimy — відповідь</b>\n" +
+    "\ud83d\udc64 session: <code>" + escHtml(sidShort) + "</code>\n" +
+    "\ud83d\udcdd «" + escHtml(truncate(reply, TG_MAX)) + "»\n" +
+    "\u23f1 " + escHtml(String(ms)) + "ms · provider: <b>" + escHtml(provider) + "</b>" +
+    (attempts ? " · att=" + escHtml(String(attempts)) : "") + "\n" +
+    "\ud83d\udd52 " + escHtml(uaTime())
+  );
+}
+function sessionShort(sid) {
+  if (!sid) return "anon";
+  const s = String(sid);
+  if (s.length <= 12) return s;
+  return s.slice(0, 6) + "…" + s.slice(-4);
+}
+function sidFromReq(req) {
+  const body = req.body || {};
+  const sid = (typeof body.sessionId === "string" && body.sessionId) ||
+              (typeof body.session_id === "string" && body.session_id) ||
+              (req.headers["x-session-id"] || "");
+  if (sid) return String(sid);
+  // Derive from IP+UA hash
+  const ip = (req.headers["cf-connecting-ip"] || req.headers["x-forwarded-for"] || req.ip || "0.0.0.0").toString().split(",")[0].trim();
+  const ua = String(req.headers["user-agent"] || "");
+  const crypto = require("crypto");
+  return "anon-" + crypto.createHash("sha1").update(ip + "|" + ua).digest("hex").slice(0, 10);
+}
+// ---- end TG dialog logging ----
+
+
 const PORT = process.env.PORT || 8090;
 const GEMINI_KEY = process.env.GEMINI_API_KEY || "";
 const OPENAI_KEY = process.env.OPENAI_API_KEY || "";
@@ -211,6 +308,29 @@ app.post("/api/chat", async (req, res) => {
   if (!messages || !messages.length) return res.status(400).json({ error: "messages required" });
   if (!rateLimit(ip)) return res.status(429).json({ error: "rate_limit", message: "Забагато повідомлень. Спробуйте за годину 💛" });
 
+  const _sid = sidFromReq(req);
+  const _sidShort = sessionShort(_sid);
+  const _isNewSession = !TG_KNOWN_SESSIONS.has(_sid);
+  if (_isNewSession) TG_KNOWN_SESSIONS.add(_sid);
+  const _lastUserMsg = (() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i] && messages[i].role === "user" && typeof messages[i].content === "string" && messages[i].content.trim()) return messages[i].content;
+    }
+    return "";
+  })();
+  if (_lastUserMsg) {
+    try {
+      tgLogUser({
+        sid: _sid,
+        sidShort: _sidShort,
+        lastUser: _lastUserMsg,
+        isNew: _isNewSession,
+        ip,
+        ua: req.headers["user-agent"] || ""
+      });
+    } catch (e) { console.warn("[tg-log] user err:", e && e.message); }
+  }
+
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
@@ -261,7 +381,17 @@ app.post("/api/chat", async (req, res) => {
     used = "fallback";
   }
 
-  sseWrite(res, "done", { provider: used, ms: Date.now() - startedAt, attempts: attemptErrors.length + 1 });
+  const _msTotal = Date.now() - startedAt;
+  try {
+    tgLogBot({
+      sidShort: _sidShort,
+      reply: total || "",
+      provider: used,
+      ms: _msTotal,
+      attempts: attemptErrors.length + 1
+    });
+  } catch (e) { console.warn("[tg-log] bot err:", e && e.message); }
+  sseWrite(res, "done", { provider: used, ms: _msTotal, attempts: attemptErrors.length + 1 });
   res.end();
 });
 
